@@ -1,4 +1,6 @@
 import pygame
+import random
+
 from game.player import Player
 from game.anvil import Anvil
 
@@ -9,6 +11,7 @@ class GameEngine:
         self.height = height
         self.player = Player(width, height)
         self.anvils = []
+        self.dust_particles = []
 
         self.spawn_delay = 700
         self.last_spawn_time = pygame.time.get_ticks()
@@ -31,33 +34,69 @@ class GameEngine:
             return
 
         keys = pygame.key.get_pressed()
+
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.player.move_left()
+
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.player.move_right()
 
         self.player.update()
 
-        self.survival_time = (pygame.time.get_ticks() - self.start_ticks) // 1000
+        # Task 2: Dynamic difficulty
+        self.survival_time = (
+            pygame.time.get_ticks() - self.start_ticks
+        ) // 1000
+
+        self.spawn_delay = max(
+            200,
+            700 - self.survival_time * 20
+        )
 
         now = pygame.time.get_ticks()
+
         if now - self.last_spawn_time >= self.spawn_delay:
             self.anvils.append(Anvil(self.width))
             self.last_spawn_time = now
 
         player_rect = self.player.rect
+
         for anvil in self.anvils[:]:
             anvil.update()
 
             if player_rect.colliderect(anvil.rect):
                 self.game_state = "GAME_OVER"
 
+            # Task 4: Ground impact dust
             if anvil.is_off_screen(self.height):
+
+                for _ in range(15):
+                    self.dust_particles.append({
+                        "x": anvil.x + anvil.width / 2,
+                        "y": self.height - 20,
+                        "vx": random.uniform(-3, 3),
+                        "vy": random.uniform(-4, -1),
+                        "life": 30
+                    })
+
                 self.anvils.remove(anvil)
+
+        # Update dust particles
+        for particle in self.dust_particles[:]:
+            particle["x"] += particle["vx"]
+            particle["y"] += particle["vy"]
+            particle["vy"] += 0.25
+            particle["life"] -= 1
+
+            if particle["life"] <= 0:
+                self.dust_particles.remove(particle)
 
     def reset(self):
         self.player = Player(self.width, self.height)
         self.anvils.clear()
+        self.dust_particles.clear()
+
+        self.spawn_delay = 700
         self.start_ticks = pygame.time.get_ticks()
         self.last_spawn_time = pygame.time.get_ticks()
         self.survival_time = 0
@@ -67,29 +106,103 @@ class GameEngine:
         screen.fill((35, 38, 45))
 
         ground_y = self.height - 20
-        pygame.draw.rect(screen, (70, 75, 85), (0, ground_y, self.width, 20))
-        pygame.draw.line(screen, (160, 90, 40), (0, ground_y), (self.width, ground_y), 3)
+
+        pygame.draw.rect(
+            screen,
+            (70, 75, 85),
+            (0, ground_y, self.width, 20)
+        )
+
+        pygame.draw.line(
+            screen,
+            (160, 90, 40),
+            (0, ground_y),
+            (self.width, ground_y),
+            3
+        )
 
         self.player.render(screen)
+
         for anvil in self.anvils:
             anvil.render(screen)
 
-        time_surf = self.font_medium.render(f"Survival Time: {self.survival_time}s", True, (240, 240, 240))
+        # Task 4: Draw dust particles
+        for particle in self.dust_particles:
+            radius = max(2, particle["life"] // 8)
+
+            pygame.draw.circle(
+                screen,
+                (180, 180, 180),
+                (int(particle["x"]), int(particle["y"])),
+                radius
+            )
+
+        time_surf = self.font_medium.render(
+            f"Survival Time: {self.survival_time}s",
+            True,
+            (240, 240, 240)
+        )
+
         screen.blit(time_surf, (20, 20))
 
-        inst_surf = self.font_small.render("Use [A/D] or [Arrow Keys] to Dodge", True, (170, 175, 185))
-        screen.blit(inst_surf, (self.width - inst_surf.get_width() - 20, 25))
+        inst_surf = self.font_small.render(
+            "Use [A/D] or [Arrow Keys] to Dodge",
+            True,
+            (170, 175, 185)
+        )
+
+        screen.blit(
+            inst_surf,
+            (self.width - inst_surf.get_width() - 20, 25)
+        )
 
         if self.game_state == "GAME_OVER":
-            overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+            overlay = pygame.Surface(
+                (self.width, self.height),
+                pygame.SRCALPHA
+            )
+
             overlay.fill((0, 0, 0, 190))
             screen.blit(overlay, (0, 0))
 
-            over_surf = self.font_big.render("CRUSHED! GAME OVER", True, (235, 65, 65))
-            screen.blit(over_surf, (self.width // 2 - over_surf.get_width() // 2, self.height // 2 - 60))
+            over_surf = self.font_big.render(
+                "CRUSHED! GAME OVER",
+                True,
+                (235, 65, 65)
+            )
 
-            score_surf = self.font_medium.render(f"You survived: {self.survival_time} seconds", True, (255, 255, 255))
-            screen.blit(score_surf, (self.width // 2 - score_surf.get_width() // 2, self.height // 2))
+            screen.blit(
+                over_surf,
+                (
+                    self.width // 2 - over_surf.get_width() // 2,
+                    self.height // 2 - 60
+                )
+            )
 
-            restart_surf = self.font_small.render("Press [R] to Play Again", True, (200, 200, 200))
-            screen.blit(restart_surf, (self.width // 2 - restart_surf.get_width() // 2, self.height // 2 + 50))
+            score_surf = self.font_medium.render(
+                f"You survived: {self.survival_time} seconds",
+                True,
+                (255, 255, 255)
+            )
+
+            screen.blit(
+                score_surf,
+                (
+                    self.width // 2 - score_surf.get_width() // 2,
+                    self.height // 2
+                )
+            )
+
+            restart_surf = self.font_small.render(
+                "Press [R] to Play Again",
+                True,
+                (200, 200, 200)
+            )
+
+            screen.blit(
+                restart_surf,
+                (
+                    self.width // 2 - restart_surf.get_width() // 2,
+                    self.height // 2 + 50
+                )
+            )
